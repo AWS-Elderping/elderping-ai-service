@@ -3,7 +3,7 @@ const AwsBedrockProvider = require('./awsBedrockProvider');
 
 class ProviderRegistry {
   constructor() {
-    const providerType = process.env.AI_PROVIDER || 'mock';
+    const providerType = process.env.AI_PROVIDER || 'aws';
     console.log(`[AI PROVIDER REGISTRY] Initializing with provider: ${providerType}`);
     if (providerType.toLowerCase() === 'aws') {
       this.activeProvider = new AwsBedrockProvider(process.env.AWS_REGION || 'us-east-1');

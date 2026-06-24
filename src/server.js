@@ -83,7 +83,6 @@ app.post('/ai/voice-checkin', validateToken, requirePermission('AI_EXECUTE'), ch
 
     // Create Note in notes-service
     const notesServiceUrl = process.env.NOTES_SERVICE_URL || 'http://notes-service:3000';
-    const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
     const noteResponse = await fetch(`${notesServiceUrl}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization },
