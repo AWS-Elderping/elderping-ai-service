@@ -62,3 +62,4 @@ jobs:
           else
             git commit -m "deploy: update ai-service image to ${{ github.sha }}"
             git push origin main
+          fi
