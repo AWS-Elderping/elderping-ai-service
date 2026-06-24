@@ -61,7 +61,7 @@ app.post('/ai/query', validateToken, requirePermission('AI_EXECUTE'), checkRelat
     await pool.query(
       `INSERT INTO ai_interactions (user_id, model_id, capability, prompt_payload, response_payload, input_tokens, output_tokens, estimated_cost)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [userId, 'anthropic.claude-3-haiku', capability, query, result.response, Math.round(result.inputTokens), Math.round(result.outputTokens), result.cost]
+      [userId, 'amazon.nova-lite-v1', capability, query, result.response, Math.round(result.inputTokens), Math.round(result.outputTokens), result.cost]
     );
 
     res.json({ result: result.response });
@@ -98,7 +98,7 @@ app.post('/ai/voice-checkin', validateToken, requirePermission('AI_EXECUTE'), ch
     await pool.query(
       `INSERT INTO ai_interactions (user_id, model_id, capability, prompt_payload, response_payload, input_tokens, output_tokens, estimated_cost)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [userId, 'anthropic.claude-3-haiku', 'voice_summary', transcribedText, result.response, Math.round(result.inputTokens), Math.round(result.outputTokens), result.cost]
+      [userId, 'amazon.nova-lite-v1', 'voice_summary', transcribedText, result.response, Math.round(result.inputTokens), Math.round(result.outputTokens), result.cost]
     );
 
     let note = null;
@@ -136,6 +136,25 @@ app.get('/ai/interactions', validateToken, requirePermission('AI_READ'), async (
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`AI service running on port ${PORT}`);
-});
+
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_interactions (
+      id               SERIAL PRIMARY KEY,
+      user_id          INT NOT NULL,
+      model_id         VARCHAR(100),
+      capability       VARCHAR(50),
+      prompt_payload   TEXT,
+      response_payload TEXT,
+      input_tokens     INT DEFAULT 0,
+      output_tokens    INT DEFAULT 0,
+      estimated_cost   DECIMAL(12,8) DEFAULT 0,
+      created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('✅ AI interactions table ready.');
+}
+
+initDb()
+  .then(() => app.listen(PORT, () => console.log(`AI service running on port ${PORT}`)))
+  .catch(err => { console.error('DB init failed:', err.message); process.exit(1); });

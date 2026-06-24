@@ -1,4 +1,4 @@
-// authMiddleware.js
+﻿// authMiddleware.js
 // Shared middleware logic for authentication, role mapping, permissions checking, and relationship verification
 
 const jwt = require('jsonwebtoken');
@@ -179,8 +179,7 @@ const checkRelationship = (elderIdParam = 'elderId') => {
           );
           linked = result.rows.length > 0;
         } else {
-          // Cross-service call to auth-service verification route
-          const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+          // Cross-service call to auth-service verification route (uses Node 18 native fetch)
           const response = await fetch(`${authServiceUrl}/links/verify/${userId}/${elderId}`);
           if (response.ok) {
             const data = await response.json();
