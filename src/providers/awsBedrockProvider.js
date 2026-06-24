@@ -16,17 +16,25 @@ class AwsBedrockProvider extends AiProviderInterface {
     }
   }
 
-  async generateResponse(prompt, capability, modelId = 'anthropic.claude-3-haiku-20240307-v1:0') {
-    if (!this.client || !process.env.AWS_ACCESS_KEY_ID) {
+  async generateResponse(prompt, capability, modelId = 'amazon.nova-lite-v1:0') {
+    if (!this.client) {
       this.errorCount += 1;
-      throw new Error('Bedrock client is not initialized or AWS credentials are missing.');
+      throw new Error('Bedrock client is not initialized.');
     }
     try {
-      const payload = {
-        anthropic_version: "bedrock-2023-05-31",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }]
-      };
+      // Amazon Nova models use a different request/response format than Anthropic models
+      const isNovaModel = modelId.startsWith('amazon.nova');
+      const payload = isNovaModel
+        ? {
+            messages: [{ role: 'user', content: [{ text: prompt }] }],
+            inferenceConfig: { maxTokens: 1000 }
+          }
+        : {
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 1000,
+            messages: [{ role: 'user', content: prompt }]
+          };
+
       const command = new InvokeModelCommand({
         modelId: modelId,
         contentType: 'application/json',
@@ -35,16 +43,26 @@ class AwsBedrockProvider extends AiProviderInterface {
       });
       const response = await this.client.send(command);
       const resPayload = JSON.parse(Buffer.from(response.body).toString('utf-8'));
-      const textResponse = resPayload.content[0].text;
+
+      let textResponse, inputTokens, outputTokens;
+      if (isNovaModel) {
+        textResponse = resPayload.output?.message?.content?.[0]?.text || '';
+        inputTokens  = resPayload.usage?.inputTokens || 0;
+        outputTokens = resPayload.usage?.outputTokens || 0;
+      } else {
+        textResponse = resPayload.content[0].text;
+        inputTokens  = resPayload.usage?.input_tokens || 0;
+        outputTokens = resPayload.usage?.output_tokens || 0;
+      }
 
       this.lastSuccessfulInvoke = new Date().toISOString();
 
-      return {
-        response: textResponse,
-        inputTokens: resPayload.usage?.input_tokens || 0,
-        outputTokens: resPayload.usage?.output_tokens || 0,
-        cost: ((resPayload.usage?.input_tokens || 0) * 0.00025 + (resPayload.usage?.output_tokens || 0) * 0.00125) / 1000
-      };
+      // Nova Lite pricing: $0.00006/1K input, $0.00024/1K output
+      const cost = isNovaModel
+        ? (inputTokens * 0.00006 + outputTokens * 0.00024) / 1000
+        : (inputTokens * 0.00025 + outputTokens * 0.00125) / 1000;
+
+      return { response: textResponse, inputTokens, outputTokens, cost };
     } catch (err) {
       this.errorCount += 1;
       throw err;
@@ -52,7 +70,7 @@ class AwsBedrockProvider extends AiProviderInterface {
   }
 
   async getStatus() {
-    const isConfigured = !!(this.client && process.env.AWS_ACCESS_KEY_ID);
+    const isConfigured = !!this.client;
     return {
       provider: 'aws',
       healthy: isConfigured && !this.initError,
