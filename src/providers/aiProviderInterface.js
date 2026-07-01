@@ -24,6 +24,15 @@ class AiProviderInterface {
   async getStatus() {
     throw new Error('getStatus must be implemented by subclass');
   }
+
+  /**
+   * Generate a fixed-length embedding vector for a piece of text (used for RAG).
+   * @param {string} text
+   * @returns {Promise<number[]>}
+   */
+  async generateEmbedding(text) {
+    throw new Error('generateEmbedding must be implemented by subclass');
+  }
 }
 
 module.exports = AiProviderInterface;

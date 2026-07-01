@@ -4,7 +4,8 @@
   "description": "Bedrock integration and AI logic for ElderPinq",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.500.0",

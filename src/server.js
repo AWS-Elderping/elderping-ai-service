@@ -3,6 +3,8 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const { validateToken, checkRelationship, requirePermission } = require('./authMiddleware');
 const providerRegistry = require('./providers/providerRegistry');
+const { retrieveContext } = require('./rag/retriever');
+const { buildRagPrompt, REFUSAL_MESSAGE } = require('./rag/promptBuilder');
 
 const app = express();
 app.use(cors());
@@ -46,12 +48,40 @@ app.get('/ai/provider-status', validateToken, requirePermission('AI_READ'), asyn
   }
 });
 
-// General AI queries (Q&A, symptom checks, medication, risk assessment)
+// General AI queries (Q&A, symptom checks, medication, risk assessment, document_qa/RAG)
 app.post('/ai/query', validateToken, requirePermission('AI_EXECUTE'), checkRelationship('userId'), async (req, res) => {
   try {
     const { userId, capability, query } = req.body;
     if (!userId || !capability || !query) {
       return res.status(400).json({ error: 'userId, capability, and query are required' });
+    }
+
+    if (capability === 'document_qa') {
+      const provider = providerRegistry.getProvider();
+      const questionEmbedding = await provider.generateEmbedding(query);
+      const contextChunks = await retrieveContext(pool, userId, questionEmbedding, 5);
+
+      let resultResponse;
+      let inputTokens = 0, outputTokens = 0, cost = 0;
+
+      if (contextChunks.length === 0) {
+        resultResponse = REFUSAL_MESSAGE;
+      } else {
+        const ragPrompt = buildRagPrompt(query, contextChunks);
+        const result = await generateAIResponse(ragPrompt, capability);
+        resultResponse = result.response;
+        inputTokens = result.inputTokens;
+        outputTokens = result.outputTokens;
+        cost = result.cost;
+      }
+
+      await pool.query(
+        `INSERT INTO ai_interactions (user_id, model_id, capability, prompt_payload, response_payload, input_tokens, output_tokens, estimated_cost)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [userId, 'amazon.nova-lite-v1', capability, query, resultResponse, Math.round(inputTokens), Math.round(outputTokens), cost]
+      );
+
+      return res.json({ result: resultResponse });
     }
 
     const prompt = `System: You are an intelligent healthcare assistant helping an elder/caregiver. Scoped capability: ${capability}. User query: ${query}`;
@@ -151,7 +181,30 @@ async function initDb() {
       created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  console.log('✅ AI interactions table ready.');
+  console.log('AI interactions table ready.');
+
+  // RAG: pgvector extension + document_embeddings table.
+  // Dimensions pinned to 1024 to match amazon.titan-embed-text-v2:0
+  // (see awsBedrockProvider.generateEmbedding and the doc-embedder Lambda).
+  await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS document_embeddings (
+      id            SERIAL PRIMARY KEY,
+      document_id   INT NOT NULL,
+      elder_id      INT NOT NULL,
+      chunk_index   INT NOT NULL,
+      chunk_text    TEXT NOT NULL,
+      embedding     vector(1024),
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS document_embeddings_elder_id_idx ON document_embeddings (elder_id)');
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS document_embeddings_embedding_idx
+    ON document_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
+  `);
+  console.log('pgvector extension + document_embeddings table ready.');
 }
 
 initDb()

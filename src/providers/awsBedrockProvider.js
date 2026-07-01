@@ -80,6 +80,31 @@ class AwsBedrockProvider extends AiProviderInterface {
       uptimeSeconds: Math.floor((Date.now() - this.startTime) / 1000)
     };
   }
+
+  // Amazon Titan Text Embeddings V2 - pinned to 1024 dimensions so ingest-time
+  // (doc-embedder Lambda) and query-time embeddings always land in the same
+  // vector space as the `vector(1024)` column in document_embeddings.
+  async generateEmbedding(text) {
+    if (!this.client) {
+      this.errorCount += 1;
+      throw new Error('Bedrock client is not initialized.');
+    }
+    try {
+      const command = new InvokeModelCommand({
+        modelId: 'amazon.titan-embed-text-v2:0',
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({ inputText: text, dimensions: 1024, normalize: true })
+      });
+      const response = await this.client.send(command);
+      const resPayload = JSON.parse(Buffer.from(response.body).toString('utf-8'));
+      this.lastSuccessfulInvoke = new Date().toISOString();
+      return resPayload.embedding;
+    } catch (err) {
+      this.errorCount += 1;
+      throw err;
+    }
+  }
 }
 
 module.exports = AwsBedrockProvider;

@@ -44,6 +44,22 @@ class MockAiProvider extends AiProviderInterface {
       uptimeSeconds: Math.floor((Date.now() - this.startTime) / 1000)
     };
   }
+
+  // Deterministic pseudo-embedding (hash-seeded) so local dev/testing can
+  // exercise the full RAG code path without live Bedrock access. Not
+  // semantically meaningful - only used when AI_PROVIDER=mock.
+  async generateEmbedding(text) {
+    const dims = 1024;
+    let seed = 0;
+    for (let i = 0; i < text.length; i++) seed = (seed * 31 + text.charCodeAt(i)) >>> 0;
+    const vector = new Array(dims);
+    for (let i = 0; i < dims; i++) {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      vector[i] = (seed / 0xffffffff) * 2 - 1;
+    }
+    this.lastSuccessfulInvoke = new Date().toISOString();
+    return vector;
+  }
 }
 
 module.exports = MockAiProvider;
